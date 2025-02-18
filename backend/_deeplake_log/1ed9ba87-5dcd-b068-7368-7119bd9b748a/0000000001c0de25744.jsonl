@@ -1,0 +1,5 @@
+{"commit":{"release":"4.1.7","clientTimestamp":1739738371,"message":"Created initial schema"}}
+{"createColumn":{"id":2416685424,"name":"base64encoding","type":{"kind":"text","data":{"type":"text","indexing":"none"}}}}
+{"createColumn":{"id":2497700058,"name":"caption","type":{"kind":"text","data":{"type":"text","indexing":"none"}}}}
+{"createColumn":{"id":297948073,"name":"embedding","type":{"kind":"embedding","data":{"size":768,"dtype":"float32","index":"clustered"}}}}
+{"createColumn":{"id":551685523,"name":"id","type":{"kind":"generic","data":{"type":{"scalar_type":{"dtype":"uint64"},"shape":[]},"format":{"type":"chunk","strategy":{"type":"num_bytes","data":8000000},"data":{"chunk_compression":{},"sample_compression":{}}}}}}}
