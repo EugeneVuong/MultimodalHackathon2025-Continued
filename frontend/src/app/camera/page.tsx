@@ -228,9 +228,7 @@ import {
 import { doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../../lib/firebaseConfig"; // Adjust the import path as needed
 
-const authToken =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcGlrZXkiOiIzNjE1MTIzNi0zZDRjLTQwZGQtYjYzYy04MjJmN2JlNjE4MTQiLCJwZXJtaXNzaW9ucyI6WyJhbGxvd19qb2luIl0sImlhdCI6MTczOTY4Mzg2NywiZXhwIjoxODk3NDcxODY3fQ.iuMlIS-8c7eoh_0ZrtT50d-gSPg3AaZKSjOUa1I5wFY";
-
+const authToken = process.env.NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN;
 // Creating the Stream
 const createStream = async ({ token }) => {
   try {

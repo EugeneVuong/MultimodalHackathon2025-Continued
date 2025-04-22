@@ -11,8 +11,7 @@ import {
 } from "@videosdk.live/react-sdk";
 
 // Add the auth token
-const authToken =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcGlrZXkiOiIzNjE1MTIzNi0zZDRjLTQwZGQtYjYzYy04MjJmN2JlNjE4MTQiLCJwZXJtaXNzaW9ucyI6WyJhbGxvd19qb2luIl0sImlhdCI6MTczOTY4Mzg2NywiZXhwIjoxODk3NDcxODY3fQ.iuMlIS-8c7eoh_0ZrtT50d-gSPg3AaZKSjOUa1I5wFY";
+const authToken = process.env.NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN;
 
 // Create the main CameraView component
 export default function CameraView() {
