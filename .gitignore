@@ -43,6 +43,12 @@ next-env.d.ts
 
 # backend
 backend/.env
+backend/.env.local
+backend/venv/*
+backend/tempVideo/*
+backend/_deeplake_log
+backend/_pycache_
+backend/results.txt
 
 # frontend
 frontend/.env
