@@ -31,7 +31,7 @@ app.add_middleware(
 model = ChatTogether(
     model="mistralai/Mixtral-8x7B-Instruct-v0.1",
     temperature=0.7,
-    api_key="257203c442a94c07ff6f1776f8cfbc6ea6a291cd9404e6fe70ad467cb9342762"
+    api_key=os.getenv("TOGETHER_API_KEY")
 )
 
 # Updated prompt with clear instructions

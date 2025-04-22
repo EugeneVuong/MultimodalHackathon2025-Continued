@@ -236,7 +236,7 @@ def process_video_and_store(ds, video_path, caption, embedding, streamId):
     ds.commit("add to database")
 
 
-def generate_video_caption(video_path, api_key="AIzaSyA5NlH0GOSjAJKfmeCohq8tTNkES5_6uMU"):
+def generate_video_caption(video_path, api_key=process.env.GEMINI_API_KEY):
     """
     Generate a detailed caption for a video file using Google's Gemini API.
     
@@ -282,7 +282,7 @@ def generate_video_caption(video_path, api_key="AIzaSyA5NlH0GOSjAJKfmeCohq8tTNkE
     
     return response.text
 
-def generate_text_embedding(text, api_key="257203c442a94c07ff6f1776f8cfbc6ea6a291cd9404e6fe70ad467cb9342762"):
+def generate_text_embedding(text, api_key=process.env.TOGETHER_API_KEY):
     """
     Generate text embeddings using Together AI API.
     
