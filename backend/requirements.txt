@@ -1,6 +1,7 @@
 bokeh==3.6.3
 cryptography==44.0.1
 deeplake==4.1.7
+dotenv
 fastapi==0.115.8
 firebase==4.0.1
 firebase-admin==6.6.0

@@ -1,5 +1,7 @@
 import asyncio
 import base64
+import datetime
+import os
 import cv2
 import io
 import numpy as np
@@ -11,7 +13,10 @@ from firebase_admin import credentials, firestore
 from google import genai
 import requests
 import deeplake
+from dotenv import load_dotenv
 
+
+activeloop_token = os.getenv("ACTIVELOOP_TOKEN")
 # Global variables to keep track of tasks, the Playwright instance, and the main event loop.
 tasks = {}
 playwright_instance = None
@@ -27,15 +32,17 @@ schema = {
     "streamId": deeplake.types.Text(),
 }
 
-path = "file://database"
+path = "al://second-sight/video-recordings"
 df = 0
 
 try:
-    ds = deeplake.open(path)
+    # Get the environment variables from the .env file.
+    load_dotenv()
+    ds = deeplake.open('al://second-sight/video-recordings')
+    print("Dataset opened successfully.")
 except Exception as e:
     print(f"Failed to open dataset: {e}")
-    ds = deeplake.create(path, schema=schema)
-
+    ds = deeplake.create(path, schema=schema, token=activeloop_token)
 
 async def run_screencast(url: str, window_name: str, playwright_instance):
     """
@@ -45,7 +52,7 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
     that includes the last 5 seconds (from a rolling buffer) and the next 15 seconds.
     """
     # Launch browser and open page.
-    browser = await playwright_instance.chromium.launch(headless=True)
+    browser = await playwright_instance.chromium.launch(headless=False)
     context = await browser.new_context()
     page = await context.new_page()
     await page.goto(url)
@@ -53,6 +60,7 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
     # Create a CDP session and start the screencast.
     session = await context.new_cdp_session(page)
     await session.send("Page.startScreencast", {"format": "png", "quality": 100})
+    session.on("Page.screencastFrame", handle_screencast_frame)
 
     previous_frame = None  # For motion detection.
     frame_buffer = deque()  # Rolling buffer for last 5 seconds.
@@ -61,11 +69,13 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
     recording_mode = False
     recording_start_time = None
     clip_frames = []
-
+    
     async def handle_screencast_frame(frame):
         nonlocal previous_frame, recording_mode, recording_start_time, clip_frames
         data = frame.get("data")
         session_id = frame.get("sessionId")
+        db = firestore.client()
+
         # Acknowledge the frame.
         await session.send("Page.screencastFrameAck", {"sessionId": session_id})
         
@@ -95,12 +105,23 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
                 contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 movement_detected = False
 
+                # Save bounding boxes of detected contours.
+                boxes = []
                 for contour in contours:
                     if cv2.contourArea(contour) < 1500:
                         continue
+                    x, y, w, h = cv2.boundingRect(contour)
+                    boxes.append({"x":x,"y":y,"w":w,"h":h, "ts":current_time})
+
                     movement_detected = True
                     (x, y, w, h) = cv2.boundingRect(contour)
                     cv2.rectangle(frame_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
+                # Store the bounding boxes in Firestore.
+                if boxes:
+                    db.collection("motionEvents") \
+                    .document(session_id) \
+                    .set({"boxes": firestore.ArrayUnion(boxes)}, merge=True)
 
                 if movement_detected:
                     cv2.putText(frame_img, "Motion Detected", (10, 30),
@@ -115,7 +136,9 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
             if recording_mode:
                 clip_frames.append(frame_img.copy())
                 if current_time - recording_start_time >= 15:
-                    out_filename = f"tempVideo/motion_clip_{int(current_time)}.mp4"
+                    timestamp = datetime.datetime.fromtimestamp(current_time).strftime("%Y-%m-%d_%H-%M-%S")
+
+                    out_filename = f"tempVideo/motion_clip_{timestamp}.mp4"
                     height, width, _ = frame_img.shape
                     fps = 20.0
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -196,6 +219,7 @@ async def process_motion_clip(clip_filename: str, session_id: str):
     """
     global api_semaphore
     async with api_semaphore:
+        
         loop = asyncio.get_running_loop()
         try:
             caption = await loop.run_in_executor(None, generate_video_caption, clip_filename)
@@ -225,18 +249,45 @@ def process_video_and_store(ds, video_path, caption, embedding, streamId):
         video_blob = io.BytesIO(video_file.read())
     base64encoding = base64.b64encode(video_blob.getvalue()).decode("utf-8")
 
+    # Get motion clip frames
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video file: {video_path}")
+    
+    frames = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+        cap.release()
+    frames_np = np.stack(frames, axis=0)
+    print(f"[process_video_and_store] extracted {len(frames_np)} frames")
+
     ds.append({
-        "id": [1],
-        "embedding": [embedding],
-        "caption": [caption],
+        "id":             [1],         # or whatever your logic is for unique IDs
+        "embedding":      [embedding],
+        "caption":        [caption],
         "base64encoding": [base64encoding],
-        "streamId": [streamId]
+        "streamId":       [streamId],
+        "frames":         [frames_np],  # ← new 4-D Array column
     })
+    ds.commit("add video + frames")
+    print(f"[process_video_and_store] uploaded to Deep Lake, total samples = {ds.stats().count}")
 
-    ds.commit("add to database")
+
+    db = firestore.client()
+    db.collection("videoClips").add({
+        "streamId": streamId,
+        "caption": caption,
+        "embedding": embedding,
+        "videoBase64": base64encoding,
+        "timestamp": firestore.SERVER_TIMESTAMP
+    })
+    print(f"Pushed clip {video_path} → Firestore")
 
 
-def generate_video_caption(video_path, api_key=process.env.GEMINI_API_KEY):
+def generate_video_caption(video_path, api_key=os.getenv("GEMINI_API_KEY")):
     """
     Generate a detailed caption for a video file using Google's Gemini API.
     
@@ -273,7 +324,7 @@ def generate_video_caption(video_path, api_key=process.env.GEMINI_API_KEY):
     """
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash-lite-preview-02-05",
+        model="gemini-2.5-flash-preview-04-17",
         contents=[video_file, prompt]
     )
 
@@ -282,7 +333,7 @@ def generate_video_caption(video_path, api_key=process.env.GEMINI_API_KEY):
     
     return response.text
 
-def generate_text_embedding(text, api_key=process.env.TOGETHER_API_KEY):
+def generate_text_embedding(text, api_key=os.getenv("TOGETHER_API_KEY")):
     """
     Generate text embeddings using Together AI API.
     
@@ -317,7 +368,7 @@ async def main():
     global playwright_instance, MAIN_LOOP, api_semaphore
 
     # Initialize the Firebase Admin SDK.
-    cred = credentials.Certificate("mmh2025-f6143-firebase-adminsdk-fbsvc-898695a57c.json")
+    cred = credentials.Certificate("mmh2025-f6143-firebase-adminsdk-fbsvc-02a58364e6.json")
     firebase_admin.initialize_app(cred)
     db = firestore.client()
     # Reference the collection to monitor.

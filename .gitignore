@@ -49,6 +49,7 @@ backend/tempVideo/*
 backend/_deeplake_log
 backend/_pycache_
 backend/results.txt
+backend/mmh2025-f6143-firebase-adminsdk-fbsvc-02a58364e6.json
 
 # frontend
 frontend/.env
