@@ -1,7 +1,7 @@
 "use client";
 
 // Add imports for useEffect and useRef
-import { useEffect, useRef, RefObject } from "react";
+import { useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import {
   MeetingProvider,
@@ -11,7 +11,7 @@ import {
 } from "@videosdk.live/react-sdk";
 
 // Add the auth token
-const authToken = process.env.NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN;
+const authToken = process.env.NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN!;
 
 // Create the main CameraView component
 export default function CameraView() {
@@ -26,7 +26,9 @@ export default function CameraView() {
           micEnabled: false,
           webcamEnabled: false,
           name: "Camera View",
-          mode: Constants.modes.RECV_ONLY,
+          mode: "RECV_ONLY",
+          debugMode: false,
+
         }}
         token={authToken}
       >
@@ -94,23 +96,26 @@ function Participant({ participantId }: { participantId: string }) {
   const { webcamStream, webcamOn } = useParticipant(participantId);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // Build video element from SDK webcamStream track
   const setupStream = (
-    stream: any,
-    ref: RefObject<HTMLVideoElement | HTMLAudioElement>,
+    stream: ReturnType<typeof useParticipant>["webcamStream"],
+    ref: React.RefObject<HTMLVideoElement | HTMLAudioElement>,
     condition: boolean
   ) => {
-    if (ref.current && stream) {
-      ref.current.srcObject = condition
-        ? new MediaStream([stream.track])
-        : null;
-      condition && ref.current.play().catch(console.error);
+    if (!ref.current) return;
+    if (stream && condition) {
+      const mediaTrack = (stream as { track: MediaStreamTrack }).track;
+      ref.current.srcObject = new MediaStream([mediaTrack]);
+      ref.current.play().catch(console.error);
+    } else {
+      ref.current.pause();
+      ref.current.srcObject = null;
     }
   };
 
-  useEffect(
-    () => setupStream(webcamStream, videoRef, webcamOn),
-    [webcamStream, webcamOn]
-  );
+  useEffect(() => {
+    setupStream(webcamStream, videoRef, webcamOn);
+  }, [webcamStream, webcamOn]);
 
   return (
     <div className="relative w-full h-full">

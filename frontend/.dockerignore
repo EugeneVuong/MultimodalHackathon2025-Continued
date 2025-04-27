@@ -1,0 +1,6 @@
+# Ignore local dev directories
+node_modules
+.next
+.git
+.env
+
