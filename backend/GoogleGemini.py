@@ -52,6 +52,7 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
     that includes the last 5 seconds (from a rolling buffer) and the next 15 seconds.
     """
     # Launch browser and open page.
+    print(f"▶️ Starting screencast for session {window_name} at URL {url}", flush=True)
     browser = await playwright_instance.chromium.launch(headless=False)
     context = await browser.new_context()
     page = await context.new_page()
@@ -60,7 +61,7 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
     # Create a CDP session and start the screencast.
     session = await context.new_cdp_session(page)
     await session.send("Page.startScreencast", {"format": "png", "quality": 100})
-    session.on("Page.screencastFrame", handle_screencast_frame)
+    # session.on("Page.screencastFrame", handle_screencast_frame)
 
     previous_frame = None  # For motion detection.
     frame_buffer = deque()  # Rolling buffer for last 5 seconds.
@@ -74,6 +75,8 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
         nonlocal previous_frame, recording_mode, recording_start_time, clip_frames
         data = frame.get("data")
         session_id = frame.get("sessionId")
+        print(f"[{session_id}] got a frame! data len={len(frame.get('data',''))}", flush=True)
+
         db = firestore.client()
 
         # Acknowledge the frame.
@@ -260,7 +263,7 @@ def process_video_and_store(ds, video_path, caption, embedding, streamId):
         if not ret:
             break
         frames.append(frame)
-        cap.release()
+    cap.release()
     frames_np = np.stack(frames, axis=0)
     print(f"[process_video_and_store] extracted {len(frames_np)} frames")
 
