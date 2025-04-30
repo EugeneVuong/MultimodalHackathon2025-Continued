@@ -60,8 +60,10 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
 
     # Create a CDP session and start the screencast.
     session = await context.new_cdp_session(page)
-    await session.send("Page.startScreencast", {"format": "png", "quality": 100})
     # session.on("Page.screencastFrame", handle_screencast_frame)
+    await session.send("Page.startScreencast", {"format": "png", "quality": 100})
+    
+    
 
     previous_frame = None  # For motion detection.
     frame_buffer = deque()  # Rolling buffer for last 5 seconds.
@@ -74,13 +76,14 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
     async def handle_screencast_frame(frame):
         nonlocal previous_frame, recording_mode, recording_start_time, clip_frames
         data = frame.get("data")
-        session_id = frame.get("sessionId")
-        print(f"[{session_id}] got a frame! data len={len(frame.get('data',''))}", flush=True)
+        cdp_session_id = frame.get("sessionId")
+        doc_id = window_name
+        print(f"[{cdp_session_id}] got a frame! data len={len(frame.get('data',''))}", flush=True)
 
         db = firestore.client()
 
         # Acknowledge the frame.
-        await session.send("Page.screencastFrameAck", {"sessionId": session_id})
+        await session.send("Page.screencastFrameAck", {"sessionId": cdp_session_id})
         
         if data:
             # Decode the frame.
@@ -123,7 +126,7 @@ async def run_screencast(url: str, window_name: str, playwright_instance):
                 # Store the bounding boxes in Firestore.
                 if boxes:
                     db.collection("motionEvents") \
-                    .document(session_id) \
+                    .document(doc_id) \
                     .set({"boxes": firestore.ArrayUnion(boxes)}, merge=True)
 
                 if movement_detected:

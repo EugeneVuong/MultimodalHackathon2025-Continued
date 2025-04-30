@@ -1,7 +1,6 @@
 "use client";
 
-// Add imports for useEffect and useRef
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   MeetingProvider,
@@ -9,6 +8,16 @@ import {
   useParticipant,
   Constants,
 } from "@videosdk.live/react-sdk";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebaseConfig";
+
+// Define bounding-box type
+interface BBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 // Add the auth token
 const authToken = process.env.NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN!;
@@ -26,9 +35,8 @@ export default function CameraView() {
           micEnabled: false,
           webcamEnabled: false,
           name: "Camera View",
-          mode: "RECV_ONLY",
+          mode: Constants.modes.RECV_ONLY,
           debugMode: false,
-
         }}
         token={authToken}
       >
@@ -38,12 +46,29 @@ export default function CameraView() {
   );
 }
 
-// Add the StreamContainer component
+// StreamContainer manages subscription to motionEvents
 function StreamContainer({ sessionID }: { sessionID: string }) {
   const { join, meeting } = useMeeting({
     onMeetingJoined: () => console.log("Joined meeting:", sessionID),
-    onError: (error) => console.error("Meeting error:", error),
+    onError: (err) => console.error("Meeting error:", err),
   });
+
+  // State for motion-detection bounding boxes
+  const [boxes, setBoxes] = useState<BBox[]>([]);
+
+  // Subscribe to Firestore for motionEvents/{sessionID}
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "motionEvents", sessionID),
+      (snap) => {
+        if (snap.exists()) {
+          setBoxes(snap.data().boxes || []);
+        }
+      },
+      (err) => console.error("MotionEvents listener error:", err)
+    );
+    return () => unsub();
+  }, [sessionID]);
 
   useEffect(() => {
     if (!meeting) {
@@ -57,7 +82,7 @@ function StreamContainer({ sessionID }: { sessionID: string }) {
         <p className="font-mono text-sm">Session ID: {sessionID}</p>
       </div>
       {meeting ? (
-        <StreamView />
+        <StreamView boxes={boxes} />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-white">
           <p>Connecting to stream...</p>
@@ -67,8 +92,8 @@ function StreamContainer({ sessionID }: { sessionID: string }) {
   );
 }
 
-// Add the StreamView component
-function StreamView() {
+// StreamView renders video participants and overlays boxes
+function StreamView({ boxes }: { boxes: BBox[] }) {
   const { participants } = useMeeting();
   const participantArray = Array.from(participants.values());
 
@@ -81,24 +106,38 @@ function StreamView() {
   }
 
   return (
-    <div className="h-full">
+    <div className="relative w-full h-full">
       {participantArray
         .filter((p) => p.mode === Constants.modes.SEND_AND_RECV)
         .map((p) => (
           <Participant key={p.id} participantId={p.id} />
         ))}
+
+      {/* Overlay bounding boxes */}
+      {boxes.map((b, i) => (
+        <div
+          key={i}
+          className="absolute border-2 border-red-500 pointer-events-none"
+          style={{
+            left: b.x,
+            top: b.y,
+            width: b.w,
+            height: b.h,
+            zIndex: 10,
+          }}
+        />
+      ))}
     </div>
   );
 }
 
-// Add the Participant component
+// Participant renders a single video stream
 function Participant({ participantId }: { participantId: string }) {
   const { webcamStream, webcamOn } = useParticipant(participantId);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Build video element from SDK webcamStream track
   const setupStream = (
-    stream: ReturnType<typeof useParticipant>["webcamStream"],
+    stream: any,
     ref: React.RefObject<HTMLVideoElement | HTMLAudioElement>,
     condition: boolean
   ) => {
