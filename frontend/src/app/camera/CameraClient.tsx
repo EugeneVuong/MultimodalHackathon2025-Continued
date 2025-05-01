@@ -9,6 +9,8 @@ import {
 } from "@videosdk.live/react-sdk";
 import { doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../../lib/firebaseConfig";
+import { sendTrackToBackend } from "../../lib/sendTrackToBackend";
+import * as Sentry from "@sentry/nextjs";
 
 const authToken = process.env.NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN as string;
 if (!authToken) throw new Error("Missing NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN env var");
@@ -44,6 +46,12 @@ const Participant = ({ participantId, streamId }: { participantId: string; strea
 
   useEffect(() => setupStream(micStream, audioRef, micOn), [micStream, micOn, setupStream]);
   useEffect(() => setupStream(webcamStream, videoRef, webcamOn), [webcamStream, webcamOn, setupStream]);
+  useEffect(() => {
+    if (isLocal && webcamStream && webcamOn) {
+      const track = (webcamStream as { track: MediaStreamTrack }).track;
+      sendTrackToBackend(track, streamId).catch(console.error);
+    }
+  }, [webcamStream, webcamOn, isLocal, streamId]);
 
   return (
     <div className="min-h-screen w-full">
@@ -105,6 +113,15 @@ const LSContainer = ({ streamId, onLeave }: { streamId: string; onLeave: () => v
 /************** Camera Client (default export) **************/
 export default function CameraClient() {
   const [streamId, setStreamId] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(true);
+    
+  useEffect(() => {
+    async function checkConnectivity() {
+      const result = await Sentry.diagnoseSdkConnectivity();
+      setIsConnected(result !== 'sentry-unreachable');
+    }
+    checkConnectivity();
+  }, []);
 
   const initStream = async () => {
     try {
@@ -131,6 +148,14 @@ export default function CameraClient() {
   if (!streamId) {
     return (
       <div className="flex items-center justify-center h-screen">Creating live stream...</div>
+    );
+  } 
+
+  if (!isConnected) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p>The Sentry SDK is not able to reach Sentry right now - this may be due to an adblocker. For more information, see <a target="_blank" href="https://docs.sentry.io/platforms/javascript/guides/nextjs/troubleshooting/#the-sdk-is-not-sending-any-data">the troubleshooting guide</a>.</p>
+      </div>
     );
   }
 
