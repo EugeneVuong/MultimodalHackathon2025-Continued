@@ -271,6 +271,23 @@ def generate_text_embedding(text: str, api_key: str = None):
         return response.json()['data'][0]['embedding']
     else:
         raise Exception(f"API request failed with status {response.status_code}")
+    
+# Function to extract frames from a video file
+def extract_frames(video_path):
+    # Open the video
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+
+    while True:
+        ret, frame = cap.read()  # Read the next frame
+        if not ret:
+            break  # End of video
+
+        # You can optionally process or resize the frame here
+        frames.append(frame)  # Append frame to list
+
+    cap.release()
+    return frames
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
