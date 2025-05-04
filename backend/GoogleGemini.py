@@ -15,12 +15,15 @@ import deeplake
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
+import av.logging
 
 # load environment and initialize app
 load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    av.logging.set_level(av.logging.ERROR) 
+
     # startup logic (if any)
     yield
     # shutdown cleanup: close all peer connections
@@ -41,14 +44,16 @@ app.add_middleware(
 pcs: set[RTCPeerConnection] = set()
 
 schema = {
-    "id": deeplake.types.UInt64(),
-    "embedding": deeplake.types.Embedding(768),
-    "caption": deeplake.types.Text(),
-    "base64encoding": deeplake.types.Text(),
-    "streamId": deeplake.types.Text(),
+    "id": deeplake.types.UInt64(),  # Unique identifier for each entry (e.g., session ID or video clip ID)
+    "frames": deeplake.types.Sequence(deeplake.types.Image(sample_compression="jpeg")),  # Video frames as a sequence of images
+    "captions": deeplake.types.Text(),  # Single caption for the entire video
+    "embeddings": deeplake.types.Embedding(768),  # Embedding for the entire video
 }
 
-path = "file://database"
+
+# path = "file://database"
+path = "al://second-sight/videos"
+
 df = 0
 
 try:
@@ -181,14 +186,16 @@ def process_video_and_store(ds, video_path, caption, embedding, streamId):
         video_blob = io.BytesIO(video_file.read())
     base64encoding = base64.b64encode(video_blob.getvalue()).decode("utf-8")
 
-    ds.append({
-        "id": [1],
-        "embedding": [embedding],
-        "caption": [caption],
-        "base64encoding": [base64encoding],
-        "streamId": [streamId]
-    })
+    # Extract frames from the video
+    frames = extract_frames(video_path)
 
+    data_to_upload = {
+           'id': int(time.time() * 1000),  # Repeat the ID for each frame
+            'frames': [cv2.imencode('.jpg', frame)[1].tobytes() for frame in frames],  # Encode frames to JPEG
+            'captions': caption,  # Single caption for the entire video (not repeated)
+            'embeddings': embedding,  # Single embedding for the entire video
+        }
+    ds.append(data_to_upload)
     ds.commit("add to database")
 
 
