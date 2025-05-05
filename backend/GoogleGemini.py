@@ -20,6 +20,7 @@ import av.logging
 # load environment and initialize app
 load_dotenv()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     av.logging.set_level(av.logging.ERROR) 
@@ -228,12 +229,19 @@ def generate_video_caption(video_path: str, api_key: str = None):
         raise ValueError(f"Video processing failed: {video_file.state.name}")
 
     # Enhanced prompt for better description
+    # prompt = """
+    # Analyze this video in detail and describe:
+    # 1. The main action or event
+    # 2. The setting and environment
+    # 3. Any notable movements or changes
+    # 4. Key details about the subjects involved
+    # Please provide a natural, flowing description.
+    # """
+
     prompt = """
-    Analyze this video in detail and describe:
-    1. The main action or event
-    2. The setting and environment
-    3. Any notable movements or changes
-    4. Key details about the subjects involved
+    Analyze this video in detail and describe the main action or 
+    event, the setting and environment, any notable movements or 
+    changes, and key details about the subjects involved. 
     Please provide a natural, flowing description.
     """
 
