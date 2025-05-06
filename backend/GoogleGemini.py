@@ -44,24 +44,16 @@ app.add_middleware(
 
 pcs: set[RTCPeerConnection] = set()
 
-schema = {
-    "id": deeplake.types.UInt64(),  # Unique identifier for each entry (e.g., session ID or video clip ID)
-    "frames": deeplake.types.Sequence(deeplake.types.Image(sample_compression="jpeg")),  # Video frames as a sequence of images
-    "captions": deeplake.types.Text(),  # Single caption for the entire video
-    "embeddings": deeplake.types.Embedding(768),  # Embedding for the entire video
-}
-
-
 # path = "file://database"
-path = "al://second-sight/videos"
+path = "al://second-sight/video-recordings"
 
 df = 0
 
 try:
-    ds = deeplake.open(path)
+    ds = deeplake.open(path, token=os.getenv("ACTIVELOOP_TOKEN"))
 except Exception as e:
     print(f"Failed to open dataset: {e}")
-    ds = deeplake.create(path, schema=schema)
+    
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.codecs import get_decoder as _original_get_decoder
@@ -193,8 +185,8 @@ def process_video_and_store(ds, video_path, caption, embedding, streamId):
     data_to_upload = {
            'id': int(time.time() * 1000),  # Repeat the ID for each frame
             'frames': [cv2.imencode('.jpg', frame)[1].tobytes() for frame in frames],  # Encode frames to JPEG
-            'captions': caption,  # Single caption for the entire video (not repeated)
-            'embeddings': embedding,  # Single embedding for the entire video
+            'captions': [caption],  # Single caption for the entire video (not repeated)
+            'embeddings': [embedding],  # Single embedding for the entire video
         }
     ds.append(data_to_upload)
     ds.commit("add to database")
