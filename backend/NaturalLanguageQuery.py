@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 import deeplake
 import requests
+import uvicorn
 from generations import generate_text_embedding
 
 # load environment and initialize app
@@ -144,3 +145,6 @@ async def search_videos(request: QueryRequest):
     except Exception as e:
         print(f"Unexpected error in /query endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error.")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8001)

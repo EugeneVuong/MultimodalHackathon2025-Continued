@@ -181,10 +181,15 @@ def process_video_and_store(ds, video_path, caption, embedding, streamId):
 
     # Extract frames from the video
     frames = extract_frames(video_path)
+    jpeg_frames = []
+    for frame in frames:
+        ret, jpeg = cv2.imencode('.jpg', frame)
+        if ret:
+            jpeg_frames.append(jpeg.tobytes())
 
     data_to_upload = {
-           'id': int(time.time() * 1000),  # Repeat the ID for each frame
-            'frames': [cv2.imencode('.jpg', frame)[1].tobytes() for frame in frames],  # Encode frames to JPEG
+           'id': [int(time.time() * 1000)],  # Repeat the ID for each frame
+            'frames': [jpeg_frames],  # Encode frames to JPEG
             'captions': [caption],  # Single caption for the entire video (not repeated)
             'embeddings': [embedding],  # Single embedding for the entire video
         }
