@@ -1,5 +1,6 @@
 import os
 import cv2
+import numpy as np
 
 # --- Function to Create Video from Frames ---
 def create_video_from_frames(frames, output_path, fps=30):
@@ -40,3 +41,16 @@ def create_video_from_frames(frames, output_path, fps=30):
     out.release() # Release the VideoWriter
     print(f"Successfully created video: {output_path}")
     return True
+
+
+# Function to uncompress (decode) the JPEG byte data into frames
+def decode_jpeg_frames(jpeg_frames):
+    frames = []
+    for jpeg in jpeg_frames:
+        # Decode the JPEG byte data back into a NumPy array (image)
+        frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)  # Decode as color image
+        if frame is not None:
+            frames.append(frame)
+        else:
+            print("Error: Failed to decode frame.")
+    return frames

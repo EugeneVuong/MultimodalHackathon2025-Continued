@@ -41,11 +41,10 @@ def generate_video_caption(video_path, api_key=GEMINI_API_KEY):
         raise RuntimeError(f"Video processing failed: {video_file.state.name}")
 
     prompt = """
-    Analyze this video and describe:
-    1. Main action
-    2. Setting/environment
-    3. Notable movements
-    4. Key details about subjects
+    Analyze this video in detail and describe the main action or 
+    event, the setting and environment, any notable movements or 
+    changes, and key details about the subjects involved. 
+    Please provide a natural, flowing description.
     """
 
     response = client.models.generate_content(
