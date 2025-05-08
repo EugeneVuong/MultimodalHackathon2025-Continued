@@ -1,4 +1,11 @@
-# Project Name
+# Second Sight
+
+A multimodal video‐search and live‐monitoring platform combining:
+
+Automatic video captioning via Google Gemini
+Text‐embedding search with Together AI & DeepLake
+Live stream viewing & snapshots via VideoSDK
+AI‐powered chat interface and alert actions
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
@@ -12,17 +19,63 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+First, navigate to the backend and create a virtual environment to install requirements:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
+cd backend
+pip install -r requirements.txt
+```
+
+Then create a .env file in both the backend and frontend with the following keys:
+
+```
+# Backend Keys
+GEMINI_API_KEY="YOUR-KEY-HERE"
+TOGETHER_API_KEY="YOUR-KEY-HERE"
+ACTIVELOOP_TOKEN = "YOUR-KEY-HERE"
+
+```
+
+```
+# Frontend keys
+VITE_FIREBASE_API_KEY="YOUR-KEY-HERE"
+VITE_FIREBASE_AUTH_DOMAIN="YOUR-KEY-HERE"
+VITE_FIREBASE_PROJECT_ID="YOUR-KEY-HERE"
+VITE_FIREBASE_STORAGE_BUCKET="YOUR-KEY-HERE"
+VITE_FIREBASE_MESSAGING_SENDER_ID="YOUR-KEY-HERE"
+VITE_FIREBASE_APP_ID="YOUR-KEY-HERE"
+VITE_FIREBASE_MEASUREMENT_ID="YOUR-KEY-HERE"
+
+NEXT_PUBLIC_VIDEOSDK_AUTH_TOKEN="YOUR-KEY-HERE"
+
+
+```
+
+Then navigate to the frontend and run:
+```
+npm install
+npm run dev
+```
+
+In the backend run:
+
+```
+python GoogleGemini.py
+
+```
+Also, in GoogleGemini.py, change the path to your own dataset created on Activeloop's DeepLake app at: https://app.activeloop.ai
+```
+# Change this to your own created dataset
+path = "al://second-sight/video-recordings"
+```
+
+Now you can navigate to a browser at http://localhost:3000
+
+You can access individual cameras at http://localhost:3000/camera where you will be prompted to enable your camera and the backend waits for motion detection which is then saved to the ActiveLoop database.
+
+You can access the main dashboard with http://localhost:3000/dashboard where you can add camera systems and query for videos in the chat section on the right
+
+
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
@@ -31,6 +84,11 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Project Structure
+
+This repository contains:
+
+backend/: A FastAPI server that processes videos, stores frames, captions, and embeddings in a DeepLake dataset, and offers a /query endpoint.
+frontend/: A Next.js (App Router) client with a dashboard for connecting to live streams, AI chat interface, and alert management.
 
 The project follows the Next.js App Router structure:
 
