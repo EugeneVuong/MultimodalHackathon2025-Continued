@@ -6,7 +6,7 @@ import numpy as np
 import time
 import os
 from collections import deque
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from dotenv import load_dotenv
 import uvicorn
@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 import av.logging
+from pydantic import BaseModel
 
 # load environment and initialize app
 load_dotenv()
@@ -44,15 +45,23 @@ app.add_middleware(
 
 pcs: set[RTCPeerConnection] = set()
 
-# path = "file://database"
+# Change this to your own created dataset
 path = "al://second-sight/video-recordings"
-
+# Define your schema
+schema = {
+    "id": deeplake.types.UInt64(),  # Unique identifier for each entry (e.g., session ID or video clip ID)
+    "frames": deeplake.types.Sequence(deeplake.types.Image(sample_compression="jpeg")),  # Video frames as a sequence of images
+    "captions": deeplake.types.Text(),  # Single caption for the entire video
+    "embeddings": deeplake.types.Embedding(768),  # Embedding for the entire video
+}
 df = 0
 
 try:
     ds = deeplake.open(path, token=os.getenv("ACTIVELOOP_TOKEN"))
 except Exception as e:
     print(f"Failed to open dataset: {e}")
+    ds = deeplake.create(url = path, schema=schema, token= os.getenv("ACTIVELOOP_TOKEN"))
+    print(f"Created new dataset at {path}")
     
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -300,6 +309,188 @@ def extract_frames(video_path):
 
     cap.release()
     return frames
+
+# Pydantic models for query endpoint
+class QueryRequest(BaseModel):
+    query: str
+
+class VideoResult(BaseModel):
+    id: str
+    caption: str
+    frames: list[str]
+
+class QueryResponse(BaseModel):
+    results: list[VideoResult]
+
+def query_deeplake_dataset(query_text: str, num_results: int = 1):
+    if ds is None:
+        raise HTTPException(status_code=503, detail="Dataset not available")
+
+    results_list = []
+    try:
+        embed_query = generate_text_embedding(query_text)
+        if embed_query is None:
+            raise ValueError("Embedding generation failed.")
+
+        str_query_embedding = ",".join(map(str, embed_query))
+
+        dl_query = f"""
+            SELECT *, cosine_similarity(embeddings, ARRAY[{str_query_embedding}]) as score
+            ORDER BY cosine_similarity(embeddings, ARRAY[{str_query_embedding}]) DESC 
+            LIMIT {num_results}  
+        """
+        view = ds.query(dl_query)
+
+        for row in view:
+            # row is a tuple: (id, captions, frames, score)
+            try:
+                # Access by column name (string)
+                video_id = row['id']
+                caption = row['captions'] 
+                frame_tensors = row['frames']
+                # score = row['score'] # You might want to use the score if needed later
+            except KeyError as e:
+                print(f"KeyError: {e} not found in row. Available keys: {list(row.keys()) if hasattr(row, 'keys') else 'N/A'}")
+                print("Row content:", row)
+                continue
+            except TypeError:
+                # This might happen if row isn't subscriptable as expected
+                print(f"TypeError: Row is not a dict-like object. Row type: {type(row)}, Row: {row}")
+                continue
+            
+            base64_frames = []
+            # Ensure frame_tensors is what you expect. It might be a list of bytes already.
+            # If 'frames' in DeepLake is already a list of JPEG bytes, the structure might be different.
+            
+            # Assuming frame_tensors is a list of individual frame data (e.g., numpy arrays or byte strings)
+            if isinstance(frame_tensors, (list, np.ndarray)): # Check if it's iterable
+                # If frame_tensors from deeplake for 'frames' column is a list containing ONE list of bytes:
+                if len(frame_tensors) == 1 and isinstance(frame_tensors[0], list) and all(isinstance(f, bytes) for f in frame_tensors[0]):
+                    actual_frame_data_list = frame_tensors[0]
+                else: # Otherwise, assume it's a list of frame data directly
+                    actual_frame_data_list = frame_tensors
+
+                for frame_data in actual_frame_data_list:
+                    if isinstance(frame_data, np.ndarray): # If it's a numpy array (raw pixels)
+                        try:
+                            # Print debug info about frame_data
+                            print(f"Frame data shape: {frame_data.shape}, dtype: {frame_data.dtype}")
+                            
+                            # Handle different array shapes
+                            frame_to_encode = None
+                            if len(frame_data.shape) == 2:  # Grayscale image
+                                frame_to_encode = frame_data
+                            elif len(frame_data.shape) == 3:  # Color image (or similar)
+                                frame_to_encode = frame_data
+                                if frame_data.shape[2] == 1:  # Single channel in 3D array
+                                    frame_to_encode = frame_data[:,:,0]  # Extract the single channel
+                            elif len(frame_data.shape) == 1:  # 1D array, likely encoded bytes
+                                try:
+                                    # Try to decode it if it's bytes
+                                    if frame_data.dtype == np.dtype('uint8') or frame_data.dtype == np.dtype('int8'):
+                                        # Assume it's a serialized JPEG
+                                        encoded = base64.b64encode(frame_data.tobytes()).decode('utf-8')
+                                        base64_frames.append(encoded)
+                                        continue  # Skip the resize and re-encode path
+                                except Exception as e:
+                                    print(f"Error handling 1D array: {e}")
+                                    continue  # Skip this frame
+                            else:
+                                print(f"Unexpected frame_data shape: {frame_data.shape}")
+                                continue  # Skip this frame
+                            
+                            # If we don't have a frame to encode at this point, skip
+                            if frame_to_encode is None:
+                                print("No valid frame to encode")
+                                continue
+                                
+                            # Get the dimensions for resizing if needed
+                            if len(frame_to_encode.shape) >= 2:
+                                height, width = frame_to_encode.shape[:2]
+                                max_image_dim = 1920  # Max dimension (width or height)
+                                
+                                if height > max_image_dim or width > max_image_dim:
+                                    if height > width:
+                                        scaling_factor = max_image_dim / float(height)
+                                        new_height = max_image_dim
+                                        new_width = int(width * scaling_factor)
+                                    else: # width >= height
+                                        scaling_factor = max_image_dim / float(width)
+                                        new_width = max_image_dim
+                                        new_height = int(height * scaling_factor)
+                                    
+                                    # Ensure dimensions are at least 1
+                                    new_width = max(1, new_width)
+                                    new_height = max(1, new_height)
+
+                                    # Ensure frame is in the right format for resize
+                                    if frame_to_encode.dtype != np.uint8:
+                                        frame_to_encode = frame_to_encode.astype(np.uint8)
+                                        
+                                    resized_frame = cv2.resize(frame_to_encode, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                                    frame_to_encode = resized_frame
+                                    print(f"Resized frame from {width}x{height} to {new_width}x{new_height} (max_dim: {max_image_dim})")
+                            
+                            # Convert frame to correct format for imencode if needed
+                            if frame_to_encode.dtype != np.uint8:
+                                frame_to_encode = frame_to_encode.astype(np.uint8)
+                                
+                            # This path might not be hit if you stored pre-encoded JPEGs
+                            try:
+                                ret, buffer = cv2.imencode('.jpg', frame_to_encode) # Use potentially resized frame
+                                if ret:
+                                    encoded = base64.b64encode(buffer).decode('utf-8')
+                                    base64_frames.append(encoded)
+                                else:
+                                    print("imencode failed but didn't raise exception")
+                            except Exception as e:
+                                print(f"imencode specific error: {e}")
+                                # Try saving the frame to a buffer using PIL as a fallback
+                                try:
+                                    from PIL import Image
+                                    import io
+                                    img = Image.fromarray(frame_to_encode)
+                                    buffer = io.BytesIO()
+                                    img.save(buffer, format="JPG")
+                                    encoded = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                                    base64_frames.append(encoded)
+                                    print("Successfully used PIL as fallback")
+                                except Exception as pil_err:
+                                    print(f"PIL fallback also failed: {pil_err}")
+                        except Exception as encode_err:
+                            print(f"Error encoding numpy frame: {encode_err}")
+                            continue
+                    elif isinstance(frame_data, bytes): # If it's already bytes (likely pre-encoded JPEG)
+                        try:
+                            encoded = base64.b64encode(frame_data).decode('utf-8')
+                            base64_frames.append(encoded)
+                        except Exception as encode_err:
+                            print(f"Error base64 encoding bytes frame: {encode_err}")
+                            continue
+                    else:
+                        print(f"Skipping unrecognized frame_data type: {type(frame_data)}")
+            else:
+                print(f"Frame_tensors is not iterable or not a recognized type: {type(frame_tensors)}")
+
+
+            if base64_frames:
+                results_list.append(VideoResult(
+                    id=str(video_id), # Ensure ID is string
+                    caption=str(caption) if caption is not None else "", # Ensure caption is string
+                    frames=base64_frames
+                )) 
+
+        return results_list
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/query", response_model=QueryResponse)
+async def search_videos(request: QueryRequest):
+    """
+    Endpoint to search videos by natural language query.
+    """
+    results = query_deeplake_dataset(request.query)
+    return QueryResponse(results=results)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
